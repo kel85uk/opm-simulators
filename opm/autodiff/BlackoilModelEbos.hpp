@@ -106,7 +106,7 @@ namespace Opm {
     public:
         // ---------  Types and enums  ---------
         typedef BlackoilState ReservoirState;
-        typedef WellStateFullyImplicitBlackoilDense WellState;
+        typedef WellStateFullyImplicitBlackoil WellState;
         typedef BlackoilModelParameters ModelParameters;
 
         typedef typename GET_PROP_TYPE(TypeTag, Simulator)         Simulator;
@@ -301,6 +301,15 @@ namespace Opm {
                 perfTimer.reset();
                 perfTimer.start();
 
+                // handling well state update before oscillation treatment is a decision based
+                // on observation to avoid some big performance degeneration under some circumstances.
+                // there is no theorectical explanation which way is better for sure.
+
+                if( nw > 0 )
+                {
+                    wellModel().recoverWellSolutionAndUpdateWellState(x, well_state);
+                }
+
                 if (param_.use_update_stabilization_) {
                     // Stabilize the nonlinear update.
                     bool isOscillate = false;
@@ -322,10 +331,6 @@ namespace Opm {
                 // chopping of the update.
                 updateState(x,iteration);
 
-                if( nw > 0 )
-                {
-                    wellModel().recoverWellSolutionAndUpdateWellState(x, well_state);
-                }
                 report.update_time += perfTimer.stop();
             }
 
@@ -408,11 +413,7 @@ namespace Opm {
                 if (elem.partitionType() != Dune::InteriorEntity)
                     continue;
 
-#if DUNE_VERSION_NEWER(DUNE_COMMON, 2,4)
 		unsigned globalElemIdx = elemMapper.index(elem);
-#else
-		unsigned globalElemIdx = elemMapper.map(elem);
-#endif
                 const auto& priVarsNew = ebosSimulator_.model().solution(/*timeIdx=*/0)[globalElemIdx];
 
                 Scalar pressureNew;

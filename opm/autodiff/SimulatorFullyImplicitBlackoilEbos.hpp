@@ -26,7 +26,7 @@
 #include <opm/autodiff/NonlinearSolver.hpp>
 #include <opm/autodiff/BlackoilModelEbos.hpp>
 #include <opm/autodiff/BlackoilModelParameters.hpp>
-#include <opm/autodiff/WellStateFullyImplicitBlackoilDense.hpp>
+#include <opm/autodiff/WellStateFullyImplicitBlackoil.hpp>
 #include <opm/autodiff/StandardWellsDense.hpp>
 #include <opm/autodiff/RateConverter.hpp>
 #include <opm/autodiff/SimFIBODetails.hpp>
@@ -60,7 +60,7 @@ public:
 
     typedef Ewoms::BlackOilPolymerModule<TypeTag> PolymerModule;
 
-    typedef WellStateFullyImplicitBlackoilDense WellState;
+    typedef WellStateFullyImplicitBlackoil WellState;
     typedef BlackoilState ReservoirState;
     typedef BlackoilOutputWriter OutputWriter;
     typedef BlackoilModelEbos<TypeTag> Model;
@@ -158,6 +158,11 @@ public:
             convertInput(/*iterationIdx=*/0, state, ebosSimulator_ );
             ebosSimulator_.model().invalidateIntensiveQuantitiesCache(/*timeIdx=*/0);
         }
+
+        // Sync the overlap region of the inital solution. It was generated
+        // from the ReservoirState which has wrong values in the ghost region
+        // for some models (SPE9, Norne, Model 2)
+        ebosSimulator_.model().syncOverlap();
 
         // Create timers and file for writing timing info.
         Opm::time::StopWatch solver_timer;
@@ -292,8 +297,9 @@ public:
             solver_timer.start();
 
             const auto& wells_ecl = eclState().getSchedule().getWells(timer.currentStepNum());
+            extractLegacyCellPvtRegionIndex_();
             WellModel well_model(wells, &(wells_manager.wellCollection()), wells_ecl, model_param_,
-                                 rateConverter_, terminal_output_, timer.currentStepNum());
+                                 rateConverter_, terminal_output_, timer.currentStepNum(), legacyCellPvtRegionIdx_);
 
             auto solver = createSolver(well_model);
 
@@ -455,7 +461,7 @@ public:
     { return ebosSimulator_.gridManager().grid(); }
 
 protected:
-    void handleAdditionalWellInflow(SimulatorTimer& timer,
+    void handleAdditionalWellInflow(SimulatorTimer& /*timer*/,
                                     WellsManager& /* wells_manager */,
                                     WellState& /* well_state */,
                                     const Wells* /* wells */)
@@ -542,6 +548,9 @@ protected:
             {
                 WellControls* ctrl = wells->ctrls[*rp];
                 const bool is_producer = wells->type[*rp] == PRODUCER;
+                const int well_cell_top = wells->well_cells[wells->well_connpos[*rp]];
+                const auto& eclProblem = ebosSimulator_.problem();
+                const int pvtreg = eclProblem.pvtRegionIndex(well_cell_top);
 
                 // RESV control mode, all wells
                 {
@@ -563,7 +572,7 @@ protected:
                         }
 
                         const int fipreg = 0; // Hack.  Ignore FIP regions.
-                        rateConverter_.calcCoeff(prates, fipreg, distr);
+                        rateConverter_.calcCoeff(fipreg, pvtreg, distr);
 
                         well_controls_iset_distr(ctrl, rctrl, & distr[0]);
                     }
@@ -585,7 +594,7 @@ protected:
                             SimFIBODetails::historyRates(pu, p, hrates);
 
                             const int fipreg = 0; // Hack.  Ignore FIP regions.
-                            rateConverter_.calcCoeff(hrates, fipreg, distr);
+                            rateConverter_.calcCoeff(fipreg, pvtreg, distr);
 
                             // WCONHIST/RESV target is sum of all
                             // observed phase rates translated to
@@ -949,6 +958,9 @@ protected:
                     if ( active[Water] ) {
                         fluidState.setSaturation(FluidSystem::waterPhaseIdx, saturations[cellIdx*numPhases + pu.phase_pos[Water]]);
                     }
+                    else {
+                        fluidState.setSaturation(FluidSystem::waterPhaseIdx, 0.0);
+                    }
                     fluidState.setSaturation(FluidSystem::oilPhaseIdx, saturations[cellIdx*numPhases + pu.phase_pos[Oil]]);
                     fluidState.setSaturation(FluidSystem::gasPhaseIdx, saturations[cellIdx*numPhases + pu.phase_pos[Gas]]);
 
@@ -982,11 +994,8 @@ protected:
     }
 
     RateConverterType createRateConverter_() {
-        extractLegacyCellPvtRegionIndex_();
         RateConverterType rate_converter(phaseUsage_,
-                                         legacyCellPvtRegionIdx_.data(),
-                                         AutoDiffGrid::numCells(grid()),
-                                         std::vector<int>(AutoDiffGrid::numCells(grid()), 0));
+                                         std::vector<int>(AutoDiffGrid::numCells(grid()), 0)); // FIP = 0
         return rate_converter;
     }
 
