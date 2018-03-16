@@ -131,9 +131,7 @@ namespace Opm {
             std::vector<double> depth_;
             std::vector<Aquifer_object> aquifers_;
 
-
             SimulatorReport last_report_;
-
 
             void updateConnectionIntensiveQuantities() const;
 
@@ -160,4 +158,5 @@ namespace Opm {
 } // namespace Opm
 
 #include "BlackoilAquiferModel_impl.hpp"
+
 #endif

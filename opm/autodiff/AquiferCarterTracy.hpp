@@ -28,7 +28,6 @@
 #include <opm/common/OpmLog/OpmLog.hpp>
 #include <opm/core/props/BlackoilPhases.hpp>
 
-
 #include <opm/material/densead/Math.hpp>
 #include <opm/material/densead/Evaluation.hpp>
 
@@ -75,7 +74,6 @@ namespace Opm
             static const int contiSolventEqIdx = BlackoilIndices::contiSolventEqIdx;
             static const int contiPolymerEqIdx = BlackoilIndices::contiPolymerEqIdx;
 
-
             explicit AquiferCarterTracy( const AquiferCT::AQUCT_data& params, const Aquancon::AquanconOutput& connection,
                                          const int numComponents, const Scalar gravity, const Simulator& ebosSimulator    )
             : phi_aq_ (params.phi_aq), //
@@ -106,7 +104,6 @@ namespace Opm
 
                 return *phase_usage_;
             }
-
 
             inline void assembleAquiferEq(Simulator& ebosSimulator, const SimulatorTimerInterface& timer)
             {
@@ -155,11 +152,14 @@ namespace Opm
                 for (auto Qai = Qai_.begin(); Qai != Qai_.end(); ++Qai)
                 {
                     W_flux_ += (*Qai)*timer.currentStepLength();
+                    std::cout <<"Qe = "<<*Qai<<std::endl;
+                    std::cout <<"Te = "<<timer.simulationTimeElapsed()<<std::endl;
                 }
             }
 
             inline const double area_fraction(const int i)
             {
+                std::cout<<"area_fraction ="<<alphai_.at(i)<<std::endl;
                 return alphai_.at(i);
             }
 
@@ -172,7 +172,6 @@ namespace Opm
             {
                 return aquiferID_;
             }
-
 
         private:
             const PhaseUsage* phase_usage_;
@@ -194,7 +193,7 @@ namespace Opm
             std::vector<Eval> Qai_;
             std::vector<Eval> rhow_;
             std::vector<Scalar> alphai_;
-
+            std::vector<Scalar> faceArea_connected_;
             // Variables constants
             Scalar mu_w_ , //water viscosity
                    phi_aq_ , //aquifer porosity
@@ -341,19 +340,19 @@ namespace Opm
                 // We hack the cell depth values for now. We can actually get it from elementcontext pos
                 cell_depth_.resize(cell_idx_.size(), d0_);
                 alphai_.resize(cell_idx_.size(), 1.0);
+                faceArea_connected_.resize(cell_idx_.size(), 0.0);
 
                 auto cell2Faces = Opm::UgGridHelpers::cell2Faces(ugrid);
                 auto faceCells  = Opm::AutoDiffGrid::faceCells(ugrid);
 
                 // Translate the C face tag into the enum used by opm-parser's TransMult class
                 Opm::FaceDir::DirEnum faceDirection;
-
                 // denom_face_areas is the sum of the areas connected to an aquifer
                 Scalar denom_face_areas = 0.;
                 for (int idx = 0; idx < cell_idx_.size(); ++idx)
                 {
                     auto cellFacesRange = cell2Faces[cell_idx_.at(idx)];
-                    Scalar faceArea_connected = 0.;
+                    //Scalar faceArea_connected = 0.;
                     for(auto cellFaceIter = cellFacesRange.begin(); cellFaceIter != cellFacesRange.end(); ++cellFaceIter)
                     {
                         // The index of the face in the compressed grid
@@ -361,7 +360,6 @@ namespace Opm
 
                         // the logically-Cartesian direction of the face
                         const int faceTag = Opm::UgGridHelpers::faceTag(ugrid, cellFaceIter);
-
                         
                         if (faceTag == 0) // left
                             faceDirection = Opm::FaceDir::XMinus;
@@ -378,13 +376,20 @@ namespace Opm
 
                         if (faceDirection == connection.reservoir_face_dir.at(idx))
                         {
-                            faceArea_connected = Opm::UgGridHelpers::faceArea(ugrid, faceIdx);
-                            denom_face_areas += faceArea_connected;
+                            faceArea_connected_.at(idx) = Opm::UgGridHelpers::faceArea(ugrid, faceIdx);
+                            std::cout<<"faceArea_connected = "<<faceArea_connected_.at(idx)<<std::endl; 
+                            denom_face_areas += faceArea_connected_.at(idx);
+                            std::cout<<"denom_face_areas = "<<denom_face_areas<<std::endl;
                         }
                     }
-                    alphai_.at(idx) = faceArea_connected/denom_face_areas;
+
                     auto cellCenter = grid.getCellCenter(cell_idx_.at(idx));
                     cell_depth_.at(idx) = cellCenter[2];
+                }
+
+                for (int idx = 0; idx < cell_idx_.size(); ++idx)
+                {   
+                    alphai_.at(idx) = faceArea_connected_.at(idx)/denom_face_areas;
                 }
             }
 

@@ -83,6 +83,7 @@ namespace Opm {
               const int iterationIdx                )
     {
         last_report_ = SimulatorReport();
+
         // We need to update the reservoir pressures connected to the aquifer
         updateConnectionIntensiveQuantities();
 
@@ -100,7 +101,6 @@ namespace Opm {
         last_report_.converged = true;
     }
 
-
     template<typename TypeTag>
     void
     BlackoilAquiferModel<TypeTag>:: updateConnectionIntensiveQuantities() const
@@ -116,7 +116,6 @@ namespace Opm {
             elemCtx.updatePrimaryIntensiveQuantities(/*timeIdx=*/0);
         }
     }
-
 
     template<typename TypeTag>
     SimulatorReport 
