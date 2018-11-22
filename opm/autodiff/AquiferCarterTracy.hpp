@@ -330,6 +330,9 @@ namespace Opm
                 }
             }
 
+
+            inline const double calculateFaceArea(const int faceIdx, )
+
             inline void calculateAquiferCondition()
             {
 
